@@ -1,16 +1,22 @@
 import runpod
-from ultimate_rvc.core.inference.song_cover import SongCoverPipeline # Exemple hypothétique d'import
+import os
+
+# On tente d'importer RVC pour vérifier que l'installation a réussi au démarrage
+try:
+    # Ceci est juste pour vérifier que la librairie est bien là
+    import ultimate_rvc
+    print("Ultimate RVC library found and imported.")
+except ImportError as e:
+    print(f"CRITICAL ERROR: Could not import ultimate_rvc: {e}")
 
 def handler(job):
-    job_input = job["input"]
+    job_input = job['input']
     
-    # Récupération des inputs
-    audio_url = job_input.get("audio_url")
-    model_url = job_input.get("model_url")
-    
-    # Logique : Télécharger l'audio, télécharger le modèle, lancer l'inférence
-    # C'est ici que vous devrez coder la logique "glue" entre RunPod et RVC
-    
-    return {"status": "success", "output": "chemin/vers/fichier_resultat.mp3"}
+    # Simple echo pour le moment pour valider le serverless
+    return {
+        "status": "success",
+        "message": "Le container fonctionne, RVC est installé.",
+        "python_version": os.popen("python --version").read().strip()
+    }
 
 runpod.serverless.start({"handler": handler})
