@@ -51,17 +51,16 @@ def download_and_install_model(url, model_name):
 def handler(job):
     job_input = job.get("input", {})
     
-    # --- RECUPERATION DES PARAMETRES AVEC VALEURS PAR DEFAUT OPTIMISÉES ---
+    # --- RECUPERATION DES PARAMETRES ---
     audio_base64_input = job_input.get("audio_base64")
     model_name = job_input.get("model_name", "Eminem")
     model_url = job_input.get("model_url")
     
-    # Réglages audio fins (pilotables via JSON)
-    pitch_change = str(job_input.get("pitch", 0))          # 0 par défaut
-    f0_method = job_input.get("f0_method", "crepe")        # "crepe" par défaut (Qualité > Vitesse)
-    index_rate = str(job_input.get("index_rate", 0.75))    # Combien on force l'accent du modèle
-    filter_radius = str(job_input.get("filter_radius", 3)) # Lissage (3 est bien pour éviter le métallique)
-    protect_rate = str(job_input.get("protect", 0.33))     # Protection des consonnes (0.33 est standard)
+    # Réglages audio fins
+    pitch_change = str(job_input.get("pitch", 0))          
+    f0_method = job_input.get("f0_method", "crepe")        
+    index_rate = str(job_input.get("index_rate", 0.75))    
+    protect_rate = str(job_input.get("protect", 0.33))     
 
     if not audio_base64_input:
         return {"status": "error", "message": "Audio manquant"}
@@ -87,7 +86,7 @@ def handler(job):
         with open(input_path, "wb") as f:
             f.write(base64.b64decode(audio_base64_input))
 
-        # 4. Commande RVC Optimisée pour fichiers courts
+        # 4. Commande RVC (CORRIGÉE : --filter-radius supprimé)
         command = [
             "urvc", "generate", "convert-voice",
             input_path,
@@ -95,9 +94,9 @@ def handler(job):
             model_name,
             "--f0-method", f0_method,
             "--n-semitones", pitch_change,
-            "--no-split-voice",       # VITAL pour les fichiers < 10s
+            "--no-split-voice",       
             "--index-rate", index_rate,
-            "--filter-radius", filter_radius,
+            # "--filter-radius" SUPPRIMÉ CAR NON SUPPORTÉ
             "--rms-mix-rate", "0.25", 
             "--protect-rate", protect_rate
         ]
@@ -118,6 +117,10 @@ def handler(job):
             "audio_base64": audio_encoded
         }
 
+    except subprocess.CalledProcessError as e:
+        # On capture l'erreur de commande pour voir les logs
+        print(f"Erreur RVC CLI: {e}")
+        return {"status": "error", "message": "Erreur commande RVC (voir logs)"}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
