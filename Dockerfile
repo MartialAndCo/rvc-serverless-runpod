@@ -1,43 +1,50 @@
-# 1. Utiliser une image de base NVIDIA avec CUDA 12.1 (Compatible RunPod et PyTorch moderne)
+# 1. Image de base NVIDIA (Compatible RunPod)
 FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 
-# Éviter les questions interactives lors de l'installation (Timezone, etc.)
+# Désactiver les interactions (timezone, etc)
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 2. Mettre à jour et installer les outils système nécessaires
-# On ajoute le PPA deadsnakes pour obtenir Python 3.12
+# 2. Préparer le système : Installer les certificats et outils de base AVANT le PPA
+# On sépare les étapes pour éviter que tout plante d'un coup
 RUN apt-get update && \
-    apt-get install -y software-properties-common && \
-    add-apt-repository ppa:deadsnakes/ppa && \
-    apt-get update && \
-    apt-get install -y \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    gnupg \
+    software-properties-common \
+    wget \
+    curl \
+    git \
+    ffmpeg \
+    build-essential
+
+# 3. Ajouter le dépôt Python 3.12 (deadsnakes)
+RUN add-apt-repository ppa:deadsnakes/ppa -y && \
+    apt-get update
+
+# 4. Installer Python 3.12 et ses modules
+RUN apt-get install -y --no-install-recommends \
     python3.12 \
     python3.12-dev \
     python3.12-venv \
     python3.12-distutils \
-    git \
-    ffmpeg \
-    curl \
-    build-essential && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 3. Installer pip pour Python 3.12
+# 5. Installer PIP pour Python 3.12 (via script officiel pour éviter les conflits apt)
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
 
-# 4. Créer des alias pour que "python" et "pip" pointent vers la version 3.12
-RUN ln -s /usr/bin/python3.12 /usr/bin/python && \
+# 6. Créer les alias (python -> python3.12)
+RUN ln -sf /usr/bin/python3.12 /usr/bin/python && \
     ln -sf /usr/local/bin/pip3.12 /usr/bin/pip
 
-# 5. Installer le SDK RunPod (nécessaire car on n'utilise plus l'image de base runpod)
+# 7. Installer le SDK RunPod
 RUN pip install runpod
 
-# 6. Installer Ultimate RVC
-# Note : On pointe vers cu121 pour correspondre à notre image Docker CUDA 12.1
+# 8. Installer Ultimate RVC
+# On force l'index-url pour s'assurer d'avoir les versions compatibles CUDA
 RUN pip install --no-cache-dir "ultimate-rvc[cuda]" --extra-index-url https://download.pytorch.org/whl/cu121
 
-# 7. Copier le script handler
+# 9. Copier le worker
 COPY handler.py /handler.py
 
-# 8. Démarrage
+# 10. Lancer
 CMD [ "python", "-u", "/handler.py" ]
