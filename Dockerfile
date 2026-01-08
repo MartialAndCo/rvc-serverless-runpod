@@ -1,17 +1,16 @@
-# 1. On utilise l'image DEVEL et pas RUNTIME.
-# C'est CRUCIAL car RVC doit compiler des modules (Fairseq, etc.) lors de l'installation.
+# 1. Image DEVEL (contient GCC/G++ nécessaires pour compiler les dépendances audio)
 FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04
 
-# Configuration pour éviter les questions lors de l'installation
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH="/usr/local/cuda/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
 
-# 2. Installation des outils système + Python 3.12
-# J'ai retiré 'python3.12-distutils' qui causait l'erreur 100 car il n'existe plus.
-# J'ai ajouté 'libsndfile1' qui est indispensable pour le traitement audio (souvent oublié).
+# 2. Installation Système & Python 3.12
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     software-properties-common \
     build-essential \
+    ninja-build \
     git \
     ffmpeg \
     curl \
@@ -27,26 +26,31 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# 3. Installation de PIP pour Python 3.12
+# 3. Installation de PIP
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
 
-# 4. Alias pour forcer l'usage de Python 3.12 par défaut
+# 4. Alias Python
 RUN ln -sf /usr/bin/python3.12 /usr/bin/python && \
     ln -sf /usr/local/bin/pip3.12 /usr/bin/pip
 
-# 5. Mise à jour des outils de build (Setuptools remplace distutils)
-RUN pip install --upgrade pip setuptools wheel
+# 5. Pré-installation critiques (La clé du succès est ici)
+# On installe setuptools<70 car les versions récentes cassent la compilation de certains vieux modules audio.
+# On installe wheel, ninja, cython et numpy AVANT tout le reste.
+RUN pip install --no-cache-dir --upgrade pip "setuptools<70" wheel ninja cython numpy
 
-# 6. Installation du SDK RunPod
+# 6. Installation de PyTorch MANUELLE (Avant RVC)
+# Cela garantit que les headers Torch sont présents quand RVC en aura besoin.
+RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# 7. Installation de RunPod SDK
 RUN pip install runpod
 
-# 7. Installation de Ultimate RVC
-# On installe d'abord numpy/cython pour aider la compilation de Fairseq si nécessaire
-RUN pip install numpy cython
+# 8. Installation de Ultimate RVC
+# On utilise --no-build-isolation pour forcer l'utilisation de nos paquets (Torch/Numpy) pré-installés
 RUN pip install --no-cache-dir "ultimate-rvc[cuda]" --extra-index-url https://download.pytorch.org/whl/cu121
 
-# 8. Ajout du handler
+# 9. Copie du handler
 COPY handler.py /handler.py
 
-# 9. Démarrage
+# 10. Démarrage
 CMD [ "python", "-u", "/handler.py" ]
