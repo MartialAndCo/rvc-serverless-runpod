@@ -1,73 +1,80 @@
 import runpod
 import subprocess
 import os
-import urllib.request
-import zipfile
+import base64
+import glob
 import shutil
-
-# Fonction utilitaire pour télécharger des fichiers (Modèles)
-def download_model(url, output_dir):
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    
-    filename = os.path.join(output_dir, "model.zip")
-    print(f"Downloading model from {url}...")
-    urllib.request.urlretrieve(url, filename)
-    
-    print("Unzipping...")
-    with zipfile.ZipFile(filename, 'r') as zip_ref:
-        zip_ref.extractall(output_dir)
-    
-    # Nettoyage
-    os.remove(filename)
-    return f"Modèle installé dans {output_dir}"
 
 def handler(job):
     job_input = job.get("input", {})
     
-    # 1. Option "Télécharger un modèle"
-    # Entrée: {"method": "download_model", "url": "...", "name": "mon_modele"}
-    if job_input.get("method") == "download_model":
-        try:
-            url = job_input["url"]
-            name = job_input.get("name", "custom_model")
-            # Ultimate RVC cherche souvent les modèles dans un dossier spécifique, on essaie de le deviner ou on le met à la racine
-            # On va le mettre dans /models par défaut
-            path = f"/models/{name}"
-            result = download_model(url, path)
-            return {"status": "success", "message": result}
-        except Exception as e:
-            return {"status": "error", "error": str(e)}
-
-    # 2. Option "Exécuter une commande" (Le mode Terminal à distance)
-    # Entrée: {"command": "urvc --help"}
-    # Entrée: {"command": "ls -R"}
-    command = job_input.get("command")
+    # 1. Récupération de l'input
+    audio_base64_input = job_input.get("audio_base64")
+    model_name = job_input.get("model_name", "Eminem")
+    pitch_change = str(job_input.get("pitch", 0))
     
-    if command:
-        print(f"Executing: {command}")
-        try:
-            # On lance la commande et on capture la sortie texte
-            result = subprocess.run(
-                command, 
-                shell=True, 
-                check=True, 
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            return {
-                "status": "success",
-                "stdout": result.stdout,
-                "stderr": result.stderr
-            }
-        except subprocess.CalledProcessError as e:
-            return {
-                "status": "error",
-                "stdout": e.stdout,
-                "stderr": e.stderr
-            }
+    if not audio_base64_input:
+        return {"status": "error", "message": "Aucun 'audio_base64' fourni en entrée."}
 
-    return {"status": "error", "message": "Aucune commande fournie. Essayez {'command': 'urvc --help'}"}
+    # 2. Préparation des dossiers temporaires
+    input_path = "/tmp/input_audio" 
+    output_dir = "/tmp/output_rvc"
+    
+    # Nettoyage pour éviter de saturer la mémoire du conteneur
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir)
+    # On supprime aussi l'ancien input s'il existe
+    if os.path.exists(input_path):
+        os.remove(input_path)
+
+    try:
+        # 3. Décodage : Base64 -> Fichier Audio sur le disque
+        print("Décodage du vocal entrant...")
+        try:
+            audio_data = base64.b64decode(audio_base64_input)
+            with open(input_path, "wb") as f:
+                f.write(audio_data)
+        except Exception as e:
+            return {"status": "error", "message": f"Base64 invalide: {str(e)}"}
+
+        # 4. Conversion (La magie RVC)
+        command = [
+            "urvc", "generate", "convert-voice",
+            input_path,
+            output_dir,
+            model_name,
+            "--f0-method", "rmvpe",
+            "--n-semitones", pitch_change
+        ]
+        
+        print(f"Conversion en cours avec le modèle {model_name}...")
+        # On lance la commande (ça prendra quelques secondes selon la longueur du vocal)
+        subprocess.run(command, check=True)
+
+        # 5. Récupération du résultat
+        output_files = glob.glob(f"{output_dir}/*.wav")
+        if not output_files:
+            return {"status": "error", "message": "RVC n'a généré aucun fichier."}
+        
+        final_file = output_files[0]
+        
+        # 6. Encodage : Fichier Audio -> Base64 pour la réponse
+        print("Encodage de la réponse...")
+        with open(final_file, "rb") as audio_file:
+            # On lit le binaire et on le transforme en string utf-8
+            audio_encoded = base64.b64encode(audio_file.read()).decode("utf-8")
+
+        # 7. Réponse JSON directe
+        return {
+            "status": "success",
+            "model": model_name,
+            "audio_base64": audio_encoded
+        }
+
+    except subprocess.CalledProcessError as e:
+        return {"status": "error", "message": f"Erreur interne RVC: {e}"}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
 
 runpod.serverless.start({"handler": handler})
