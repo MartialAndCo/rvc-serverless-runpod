@@ -7,82 +7,75 @@ import shutil
 import urllib.request
 import zipfile
 
-# On force RVC à chercher les modèles ici (Dossier temporaire inscriptible)
+# Dossier des modèles
 CUSTOM_MODEL_DIR = "/tmp/voice_models"
 os.environ["URVC_VOICE_MODELS_DIR"] = CUSTOM_MODEL_DIR
 
 def download_and_install_model(url, model_name):
-    """Télécharge et installe un modèle si absent"""
+    """Télécharge et installe le modèle proprement"""
     target_dir = os.path.join(CUSTOM_MODEL_DIR, model_name)
-    
-    # Si le dossier existe déjà et contient un fichier .pth, on suppose que c'est bon
-    if os.path.exists(target_dir):
-        if glob.glob(f"{target_dir}/*.pth"):
-            print(f"Modèle '{model_name}' déjà présent en cache.")
-            return True
-        else:
-            # Dossier vide ou corrompu, on nettoie
-            shutil.rmtree(target_dir)
+    # Vérification cache
+    if os.path.exists(target_dir) and glob.glob(f"{target_dir}/*.pth"):
+        print(f"Modèle '{model_name}' déjà présent.")
+        return True
 
-    print(f"Installation du modèle '{model_name}' depuis {url}...")
+    print(f"Installation du modèle '{model_name}'...")
+    if os.path.exists(target_dir): shutil.rmtree(target_dir)
     os.makedirs(target_dir, exist_ok=True)
     
     zip_path = os.path.join(target_dir, "model.zip")
     
     try:
-        # 1. Téléchargement
-        opener = urllib.request.build_opener()
-        opener.addheaders = [('User-agent', 'Mozilla/5.0')]
-        urllib.request.install_opener(opener)
-        urllib.request.urlretrieve(url, zip_path)
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req) as response, open(zip_path, 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)
         
-        # 2. Décompression
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(target_dir)
         
-        # 3. Nettoyage zip
         os.remove(zip_path)
         
-        # 4. Vérification vitale : RVC veut le .pth DANS le dossier. 
-        # Parfois les zips contiennent un sous-dossier. On remonte les fichiers si besoin.
-        # (Logique simplifiée : on espère que le zip est bien fait, sinon RVC râlera)
-        
-        print(f"Modèle '{model_name}' installé avec succès.")
+        # On s'assure que le .pth est bien visible à la racine du dossier du modèle
+        pth_files = glob.glob(f"{target_dir}/**/*.pth", recursive=True)
+        if not pth_files: return False
+            
+        final_pth_path = os.path.join(target_dir, os.path.basename(pth_files[0]))
+        if pth_files[0] != final_pth_path:
+            shutil.move(pth_files[0], final_pth_path)
+            
         return True
     except Exception as e:
-        print(f"Erreur téléchargement modèle: {e}")
-        shutil.rmtree(target_dir) # On nettoie en cas d'échec
+        print(f"Erreur install: {e}")
         return False
 
 def handler(job):
     job_input = job.get("input", {})
     
-    # --- PARAMETRES ---
+    # --- RECUPERATION DES PARAMETRES AVEC VALEURS PAR DEFAUT OPTIMISÉES ---
     audio_base64_input = job_input.get("audio_base64")
-    model_name = job_input.get("model_name") # Ex: "Macron"
-    model_url = job_input.get("model_url")   # Ex: "https://huggingface.../macron.zip"
-    pitch_change = str(job_input.get("pitch", 0))
-    f0_method = job_input.get("f0_method", "rmvpe")
+    model_name = job_input.get("model_name", "Eminem")
+    model_url = job_input.get("model_url")
+    
+    # Réglages audio fins (pilotables via JSON)
+    pitch_change = str(job_input.get("pitch", 0))          # 0 par défaut
+    f0_method = job_input.get("f0_method", "crepe")        # "crepe" par défaut (Qualité > Vitesse)
+    index_rate = str(job_input.get("index_rate", 0.75))    # Combien on force l'accent du modèle
+    filter_radius = str(job_input.get("filter_radius", 3)) # Lissage (3 est bien pour éviter le métallique)
+    protect_rate = str(job_input.get("protect", 0.33))     # Protection des consonnes (0.33 est standard)
 
-    if not audio_base64_input or not model_name:
-        return {"status": "error", "message": "Paramètres manquants (audio_base64 ou model_name)"}
+    if not audio_base64_input:
+        return {"status": "error", "message": "Audio manquant"}
 
-    # --- ETAPE 0 : GESTION DU MODELE ---
-    # Si le modèle n'est pas "Eminem" (inclus de base) et qu'on a une URL, on tente l'install
+    # 1. Installation Modèle
     if model_name != "Eminem":
-        # On vérifie si on l'a déjà, sinon on a besoin de l'URL
-        is_installed = os.path.exists(os.path.join(CUSTOM_MODEL_DIR, model_name))
-        
-        if not is_installed:
+        if not os.path.exists(os.path.join(CUSTOM_MODEL_DIR, model_name)):
             if not model_url:
-                return {"status": "error", "message": f"Le modèle '{model_name}' n'est pas sur le serveur. Vous devez fournir 'model_url' pour l'installer la première fois."}
-            
-            success = download_and_install_model(model_url, model_name)
-            if not success:
-                return {"status": "error", "message": "Impossible de télécharger le modèle."}
+                return {"status": "error", "message": "URL modèle manquante pour première installation"}
+            if not download_and_install_model(model_url, model_name):
+                return {"status": "error", "message": "Echec téléchargement modèle"}
 
-    # --- SUITE CLASSIQUE (Conversion) ---
-    input_path = "/tmp/input_audio" 
+    # 2. Nettoyage et Préparation
+    input_path = "/tmp/input_audio.wav" 
     output_dir = "/tmp/output_rvc"
     
     if os.path.exists(output_dir): shutil.rmtree(output_dir)
@@ -90,25 +83,31 @@ def handler(job):
     if os.path.exists(input_path): os.remove(input_path)
 
     try:
-        # Décodage Audio
+        # 3. Ecriture fichier
         with open(input_path, "wb") as f:
             f.write(base64.b64decode(audio_base64_input))
 
-        # Commande RVC
+        # 4. Commande RVC Optimisée pour fichiers courts
         command = [
             "urvc", "generate", "convert-voice",
             input_path,
             output_dir,
             model_name,
             "--f0-method", f0_method,
-            "--n-semitones", pitch_change
+            "--n-semitones", pitch_change,
+            "--no-split-voice",       # VITAL pour les fichiers < 10s
+            "--index-rate", index_rate,
+            "--filter-radius", filter_radius,
+            "--rms-mix-rate", "0.25", 
+            "--protect-rate", protect_rate
         ]
         
+        print(f"Lancement conversion: {model_name} | Pitch: {pitch_change} | Algo: {f0_method}")
         subprocess.run(command, check=True)
 
-        # Encodage sortie
+        # 5. Encodage retour
         output_files = glob.glob(f"{output_dir}/*.wav")
-        if not output_files: return {"status": "error", "message": "Pas de fichier de sortie."}
+        if not output_files: return {"status": "error", "message": "Pas de fichier généré"}
         
         with open(output_files[0], "rb") as audio_file:
             audio_encoded = base64.b64encode(audio_file.read()).decode("utf-8")
@@ -116,7 +115,6 @@ def handler(job):
         return {
             "status": "success",
             "model": model_name,
-            "is_new_install": (model_url is not None), # Info utile pour le debug
             "audio_base64": audio_encoded
         }
 
