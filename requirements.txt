@@ -1,0 +1,2 @@
+runpod
+ultimate-rvc[cuda]
