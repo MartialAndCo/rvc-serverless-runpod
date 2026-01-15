@@ -123,7 +123,7 @@ def handler(job):
         ]
         
         print(f"Conversion: {model_name} (Pitch {pitch})...")
-        subprocess.run(command, check=True)
+        subprocess.run(cmd, check=True)
 
         res = glob.glob(f"{output_dir}/*.wav")
         if not res: return {"error": "No output"}
