@@ -20,9 +20,9 @@ RUN ln -sf /usr/local/bin/python3.12 /usr/bin/python && \
 RUN python --version && pip --version
 RUN pip install "pip==23.3.1"
 RUN pip install --no-cache-dir "setuptools<70" wheel ninja cython numpy
-RUN pip install --no-cache-dir torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu121
-RUN pip install --no-build-isolation git+https://github.com/facebookresearch/fairseq.git
+# NE PAS installer PyTorch manuellement - laisser ultimate-rvc le faire
 RUN pip install runpod
-RUN pip install "ultimate-rvc[cuda]" --extra-index-url https://download.pytorch.org/whl/cu121
+# Ultimate RVC installera PyTorch avec la bonne version CUDA
+RUN pip install "ultimate-rvc[cuda]" --extra-index-url https://download.pytorch.org/whl/cu128
 COPY handler.py /handler.py
 CMD [ "python", "-u", "/handler.py" ]
