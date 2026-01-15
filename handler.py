@@ -37,7 +37,7 @@ RUN ln -sf /usr/bin/python3.12 /usr/bin/python && \
 RUN pip install --no-cache-dir "setuptools<70" wheel ninja cython numpy
 # 7. PYTORCH
 RUN pip install --no-cache-dir torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu121
-# 8. Fairseq
+# 8. Fairseq 1
 RUN pip install --no-build-isolation git+https://github.com/facebookresearch/fairseq.git
 # 9. SDK RunPod
 RUN pip install runpod
