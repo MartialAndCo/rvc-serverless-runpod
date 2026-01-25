@@ -102,7 +102,7 @@ def handler(job):
 
         # 3. Conversion RVC (COMMANDE CORRIGÉE)
         cmd = [
-            "urvc", "cli", "generate", "convert-voice",  # ← CHANGÉ : ajout de "cli"
+            "urvc", "generate", "convert-voice",  # ← CHANGÉ : ajout de "cli"
             input_path, output_dir, model_name,
             "--f0-method", f0,
             "--n-semitones", pitch,
