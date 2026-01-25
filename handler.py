@@ -108,7 +108,7 @@ def handler(job):
             "--n-semitones", pitch,
             "--no-split-voice",
             "--index-rate", index,
-            "--rms-mix-rate", "0.25",
+            "--rms-mix-rate", rms_mix,
             "--protect-rate", protect,
             "--filter-radius", filter_radius
         ]
