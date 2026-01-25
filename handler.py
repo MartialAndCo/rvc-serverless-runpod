@@ -69,10 +69,10 @@ def handler(job):
     # Paramètres RVC
     pitch = str(job_input.get("pitch", 0))
     f0 = job_input.get("f0_method", "rmvpe")
-    index = str(job_input.get("index_rate", 1))
-    protect = str(job_input.get("protect", 0))
+    index = str(job_input.get("index_rate", 0.6))
+    protect = str(job_input.get("protect", 0.33))
     rms_mix = str(job_input.get("rms_mix_rate", 0.25))
-    filter_radius = str(job_input.get("filter_radius", 3))
+    clean_strength = str(job_input.get("clean_strength", 0.5))  # ← NOUVEAU
     
     # Gestion modèle custom
     if model_name != "Eminem" and not os.path.exists(os.path.join(CUSTOM_MODEL_DIR, model_name)):
@@ -100,9 +100,9 @@ def handler(job):
         else:
             return {"error": "Aucun audio fourni (audio_url ou audio_base64 requis)"}
 
-        # 3. Conversion RVC
+        # 3. Conversion RVC (COMMANDE CORRIGÉE)
         cmd = [
-            "urvc", "generate", "convert-voice",
+            "urvc", "cli", "generate", "convert-voice",  # ← CHANGÉ : ajout de "cli"
             input_path, output_dir, model_name,
             "--f0-method", f0,
             "--n-semitones", pitch,
@@ -110,10 +110,11 @@ def handler(job):
             "--index-rate", index,
             "--rms-mix-rate", rms_mix,
             "--protect-rate", protect,
-            "--filter-radius", filter_radius
+            "--clean-voice",                    # ← NOUVEAU : remplace filter-radius
+            "--clean-strength", clean_strength  # ← NOUVEAU : réduit les artefacts
         ]
         
-        print(f"🎤 Conversion: {model_name} (Pitch {pitch})...")
+        print(f"🎤 Conversion: {model_name} (Pitch {pitch}, Clean {clean_strength})...")
         subprocess.run(cmd, check=True)
 
         # 4. Récupération résultat
