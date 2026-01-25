@@ -71,6 +71,8 @@ def handler(job):
     f0 = job_input.get("f0_method", "rmvpe")
     index = str(job_input.get("index_rate", 1))
     protect = str(job_input.get("protect", 0))
+    rms_mix = str(job_input.get("rms_mix_rate", 0.25))
+    filter_radius = str(job_input.get("filter_radius", 3))
     
     # Gestion modèle custom
     if model_name != "Eminem" and not os.path.exists(os.path.join(CUSTOM_MODEL_DIR, model_name)):
@@ -107,7 +109,8 @@ def handler(job):
             "--no-split-voice",
             "--index-rate", index,
             "--rms-mix-rate", "0.25",
-            "--protect-rate", protect
+            "--protect-rate", protect,
+            "--filter-radius", filter_radius
         ]
         
         print(f"🎤 Conversion: {model_name} (Pitch {pitch})...")
